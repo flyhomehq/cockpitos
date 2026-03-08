@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>CockpitOS v2</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --green: #00ff88;
+    --green-dim: #00aa55;
+    --red: #ff3333;
+    --amber: #ffaa00;
+    --blue: #00aaff;
+    --panel: rgba(0, 20, 10, 0.92);
+  }
+
+  body {
+    background: black;
+    color: var(--green);
+    font-family: 'Share Tech Mono', monospace;
+    height: 100dvh;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  #webcam {
+    position: fixed;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    top: 0; left: 0;
+    z-index: 0;
+    opacity: 0.7;
+  }
+
+  .scanlines {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 1;
+    background: repeating-linear-gradient(
+      to bottom, transparent 0px, transparent 3px,
+      rgba(0,0,0,0.12) 3px, rgba(0,0,0,0.12) 4px
+    );
+    pointer-events: none;
+  }
+
+  .hud-frame {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 2;
+    pointer-events: none;
+  }
+  .corner {
+    position: absolute;
+    width: 50px; height: 50px;
+    border-color: var(--green);
+    border-style: solid;
+    opacity: 0.5;
+  }
+  .corner.tl { top: 14px; left: 14px; border-width: 2px 0 0 2px; }
+  .corner.tr { top: 14px; right: 14px; border-width: 2px 2px 0 0; }
+  .corner.bl { bottom: 14px; left: 14px; border-width: 0 0 2px 2px; }
+  .corner.br { bottom: 14px; right: 14px; border-width: 0 2px 2px 0; }
+
+  /* TOP BAR */
+  .top-bar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 10;
+    background: linear-gradient(to bottom, rgba(0,8,4,0.95), transparent);
+    padding: 14px 18px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .top-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 16px;
+    font-weight: 900;
+    letter-spacing: 5px;
+    color: var(--green);
+    text-shadow: 0 0 12px var(--green);
+  }
+  .top-right {
+    text-align: right;
+    font-size: 12px;
+    color: var(--green-dim);
+    line-height: 1.6;
+  }
+  .top-clock { color: var(--green); font-size: 14px; }
+
+  /* PHASE TABS */
+  .phase-tabs {
+    position: fixed;
+    top: 58px; left: 0; right: 0;
+    z-index: 10;
+    display: flex;
+    gap: 6px;
+    padding: 0 14px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .phase-tabs::-webkit-scrollbar { display: none; }
+  .ptab {
+    flex-shrink: 0;
+    padding: 8px 16px;
+    border: 1px solid var(--green-dim);
+    background: rgba(0,20,10,0.8);
+    color: var(--green-dim);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.2s;
+  }
+  .ptab.active {
+    border-color: var(--green);
+    color: var(--green);
+    background: rgba(0,255,136,0.15);
+    box-shadow: 0 0 10px rgba(0,255,136,0.3);
+  }
+
+  /* GUIDE CIRCLE */
+  .guide-wrap {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -60%);
+    z-index: 5;
+    pointer-events: none;
+  }
+  .g-outer {
+    width: 160px; height: 160px;
+    border: 1px solid rgba(0,255,136,0.25);
+    border-radius: 50%;
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    animation: spin 10s linear infinite;
+  }
+  .g-ring {
+    width: 120px; height: 120px;
+    border: 2px solid var(--green);
+    border-radius: 50%;
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 25px rgba(0,255,136,0.5);
+    animation: gpulse 2s ease-in-out infinite;
+  }
+  .g-ring.listening {
+    border-color: var(--amber);
+    box-shadow: 0 0 30px rgba(255,170,0,0.7);
+    animation: gpulse-amber 0.5s ease-in-out infinite;
+  }
+  .g-ring.confirmed {
+    border-color: var(--green);
+    box-shadow: 0 0 40px rgba(0,255,136,0.9);
+  }
+  .g-ch { position: absolute; top: 50%; left: 50%; width: 24px; height: 1px; background: var(--green); opacity: 0.4; transform: translate(-50%,-50%); }
+  .g-cv { position: absolute; top: 50%; left: 50%; width: 1px; height: 24px; background: var(--green); opacity: 0.4; transform: translate(-50%,-50%); }
+  .g-dot { position: absolute; top: 50%; left: 50%; width: 7px; height: 7px; background: var(--green); border-radius: 50%; transform: translate(-50%,-50%); box-shadow: 0 0 8px var(--green); }
+
+  .step-tag {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(75px, -125px);
+    z-index: 6;
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    color: var(--green);
+    background: rgba(0,8,4,0.85);
+    border: 1px solid var(--green);
+    padding: 3px 9px;
+    letter-spacing: 2px;
+    pointer-events: none;
+  }
+
+  @keyframes gpulse {
+    0%,100% { opacity:0.6; box-shadow: 0 0 15px rgba(0,255,136,0.4); }
+    50% { opacity:1; box-shadow: 0 0 35px rgba(0,255,136,0.8); }
+  }
+  @keyframes gpulse-amber {
+    0%,100% { opacity:0.7; }
+    50% { opacity:1; box-shadow: 0 0 40px rgba(255,170,0,0.9); }
+  }
+  @keyframes spin {
+    from { transform: translate(-50%,-50%) rotate(0deg); }
+    to { transform: translate(-50%,-50%) rotate(360deg); }
+  }
+
+  /* BOTTOM PANEL */
+  .bottom {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 10;
+    background: linear-gradient(to top, rgba(0,8,4,0.98) 85%, transparent);
+    padding: 12px 14px 20px;
+  }
+
+  /* PROGRESS */
+  .prog-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .prog-track {
+    flex: 1; height: 3px;
+    background: rgba(0,255,136,0.15);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .prog-fill {
+    height: 100%;
+    background: var(--green);
+    transition: width 0.5s ease;
+    box-shadow: 0 0 6px var(--green);
+  }
+  .prog-pct { font-size: 11px; color: var(--green-dim); min-width: 36px; text-align: right; }
+
+  /* MINI STEPS */
+  .mini-steps {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .ms {
+    font-size: 11px;
+    padding: 3px 9px;
+    border-radius: 2px;
+    border: 1px solid;
+    transition: all 0.3s;
+  }
+  .ms.done { border-color: var(--green-dim); color: var(--green-dim); text-decoration: line-through; opacity: 0.5; }
+  .ms.cur { border-color: var(--green); color: var(--green); background: rgba(0,255,136,0.12); box-shadow: 0 0 6px rgba(0,255,136,0.3); animation: blink 1s infinite; }
+  .ms.pend { border-color: rgba(0,255,136,0.15); color: rgba(0,255,136,0.25); }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+  /* INSTRUCTION */
+  .instr-card {
+    background: var(--panel);
+    border: 1px solid var(--green-dim);
+    border-left: 3px solid var(--green);
+    border-radius: 4px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+  .instr-label { font-size: 10px; color: var(--green-dim); letter-spacing: 3px; margin-bottom: 5px; }
+  .instr-text { font-size: 17px; color: var(--green); line-height: 1.5; text-shadow: 0 0 8px rgba(0,255,136,0.3); }
+  .instr-sub { font-size: 11px; color: var(--amber); margin-top: 5px; }
+
+  /* AI RESPONSE */
+  .ai-response {
+    background: rgba(0,40,20,0.9);
+    border: 1px solid rgba(0,255,136,0.3);
+    border-radius: 4px;
+    padding: 10px 14px;
+    margin-bottom: 10px;
+    min-height: 40px;
+    font-size: 13px;
+    color: var(--green);
+    line-height: 1.6;
+    display: none;
+  }
+  .ai-response.show { display: block; }
+  .ai-label { font-size: 10px; color: var(--green-dim); letter-spacing: 2px; margin-bottom: 4px; }
+
+  /* BUTTONS */
+  .btn-row {
+    display: flex;
+    gap: 8px;
+  }
+  .btn-voice {
+    flex: 0 0 auto;
+    width: 54px; height: 54px;
+    border-radius: 50%;
+    border: 2px solid var(--amber);
+    background: rgba(255,170,0,0.1);
+    color: var(--amber);
+    font-size: 22px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+  .btn-voice.active {
+    background: rgba(255,170,0,0.3);
+    box-shadow: 0 0 20px rgba(255,170,0,0.6);
+    animation: gpulse-amber 0.5s infinite;
+  }
+  .btn-skip {
+    flex: 0 0 auto;
+    padding: 0 16px;
+    height: 54px;
+    border: 1px solid rgba(0,255,136,0.3);
+    background: transparent;
+    color: var(--green-dim);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    border-radius: 3px;
+  }
+  .btn-done {
+    flex: 1;
+    height: 54px;
+    border: 2px solid var(--green);
+    background: rgba(0,255,136,0.12);
+    color: var(--green);
+    font-family: 'Orbitron', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    cursor: pointer;
+    border-radius: 3px;
+    box-shadow: 0 0 15px rgba(0,255,136,0.2);
+    transition: all 0.15s;
+  }
+  .btn-done:active { background: rgba(0,255,136,0.3); transform: scale(0.98); }
+
+  /* VOICE STATUS */
+  .voice-status {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, 60px);
+    z-index: 6;
+    font-size: 12px;
+    color: var(--amber);
+    letter-spacing: 2px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+    text-shadow: 0 0 8px var(--amber);
+  }
+  .voice-status.show { opacity: 1; }
+
+  /* COMPLETE */
+  .complete-screen {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 20;
+    background: rgba(0,8,4,0.97);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 40px;
+  }
+  .complete-screen.show { display: flex; }
+  .complete-icon { font-size: 64px; margin-bottom: 20px; }
+  .complete-title { font-family: 'Orbitron', monospace; font-size: 24px; font-weight: 900; letter-spacing: 4px; color: var(--green); text-shadow: 0 0 20px var(--green); margin-bottom: 10px; }
+  .complete-sub { font-size: 13px; color: var(--green-dim); letter-spacing: 2px; margin-bottom: 30px; line-height: 1.8; }
+  .btn-restart { padding: 14px 32px; border: 2px solid var(--green); background: rgba(0,255,136,0.1); color: var(--green); font-family: 'Orbitron', monospace; font-size: 12px; letter-spacing: 3px; cursor: pointer; border-radius: 3px; }
+
+  .flash { position: fixed; top:0; left:0; right:0; bottom:0; z-index:15; background: rgba(0,255,136,0.12); pointer-events:none; opacity:0; transition: opacity 0.1s; }
+  .flash.show { opacity:1; }
+</style>
+</head>
+<body>
+
+<video id="webcam" autoplay playsinline muted></video>
+<div class="scanlines"></div>
+<div class="hud-frame">
+  <div class="corner tl"></div><div class="corner tr"></div>
+  <div class="corner bl"></div><div class="corner br"></div>
+</div>
+
+<div class="top-bar">
+  <div class="top-title">✈ COCKPITOS</div>
+  <div class="top-right">
+    <div class="top-clock" id="clock">--:--:--</div>
+    <div id="phaseLabel">이륙 전 점검</div>
+  </div>
+</div>
+
+<div class="phase-tabs" id="phaseTabs"></div>
+
+<div class="guide-wrap">
+  <div class="g-outer"></div>
+  <div class="g-ring" id="gRing"></div>
+  <div class="g-ch"></div><div class="g-cv"></div>
+  <div class="g-dot"></div>
+</div>
+<div class="step-tag" id="stepTag">STEP 01</div>
+<div class="voice-status" id="voiceStatus">🎤 듣는 중...</div>
+
+<div class="bottom">
+  <div class="prog-row">
+    <div class="prog-track"><div class="prog-fill" id="progFill" style="width:0%"></div></div>
+    <div class="prog-pct" id="progPct">0%</div>
+  </div>
+
+  <div class="mini-steps" id="miniSteps"></div>
+
+  <div class="instr-card">
+    <div class="instr-label">▶ 현재 지시사항</div>
+    <div class="instr-text" id="instrText">로딩 중...</div>
+    <div class="instr-sub" id="instrSub"></div>
+  </div>
+
+  <div class="ai-response" id="aiResponse">
+    <div class="ai-label">◈ AI 부조종사</div>
+    <div id="aiText"></div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn-voice" id="btnVoice" onclick="toggleVoice()">🎤</button>
+    <button class="btn-skip" onclick="skipStep()">건너뛰기</button>
+    <button class="btn-done" onclick="completeStep()">✓ 완료</button>
+  </div>
+</div>
+
+<div class="complete-screen" id="completeScreen">
+  <div class="complete-icon">✅</div>
+  <div class="complete-title">체크리스트 완료</div>
+  <div class="complete-sub" id="completeSub"></div>
+  <button class="btn-restart" onclick="restart()">처음으로</button>
+</div>
+
+<div class="flash" id="flash"></div>
+
+<script>
+const PHASES = {
+  "이륙 전": [
+    { text: "빨간색 마스터 스위치를 'ON'으로 올리세요", sub: "⚠ 반드시 확인 후 진행", keyword: ["마스터", "스위치", "확인", "완료", "올렸습니다"] },
+    { text: "연료 게이지를 확인하세요", sub: "좌/우 탱크 모두 Full 확인", keyword: ["연료", "확인", "풀", "완료"] },
+    { text: "항법 라이트를 켜세요 (NAV LIGHT)", sub: "야간 운항 시 필수", keyword: ["항법", "라이트", "네브", "완료", "켰습니다"] },
+    { text: "비콘 라이트를 ON으로 설정하세요", sub: "엔진 시동 전 필수", keyword: ["비콘", "라이트", "완료", "켰습니다"] },
+    { text: "파킹 브레이크를 설정하세요", sub: "브레이크 압력 확인", keyword: ["파킹", "브레이크", "완료", "설정"] },
+  ],
+  "엔진 시동": [
+    { text: "스로틀 레버를 IDLE 위치로 설정하세요", sub: "최소 출력 위치 확인", keyword: ["스로틀", "아이들", "완료", "설정"] },
+    { text: "연료 밸브를 OPEN으로 여세요", sub: "레버 방향 확인", keyword: ["연료", "밸브", "오픈", "완료", "열었습니다"] },
+    { text: "점화 스위치를 BOTH로 돌리세요", sub: "L/R 모두 작동 확인", keyword: ["점화", "스위치", "보스", "완료", "돌렸습니다"] },
+    { text: "스타터를 작동시키세요 (START)", sub: "RPM 상승 확인", keyword: ["스타터", "시동", "스타트", "완료"] },
+    { text: "오일 압력 정상 확인 (GREEN ZONE)", sub: "30초 내 정상 범위 도달 확인", keyword: ["오일", "압력", "정상", "완료", "확인"] },
+  ],
+  "착륙 전": [
+    { text: "랜딩 기어를 DOWN으로 내리세요", sub: "3개 초록불 확인", keyword: ["랜딩", "기어", "다운", "내렸습니다", "완료"] },
+    { text: "플랩을 착륙 위치로 설정하세요 (FLAPS 30)", sub: "속도 확인 후 조작", keyword: ["플랩", "착륙", "완료", "설정"] },
+    { text: "착륙 라이트를 ON으로 켜세요", sub: "야시 및 지상 인원 확인용", keyword: ["착륙", "라이트", "완료", "켰습니다"] },
+    { text: "오토파일럿을 해제하세요 (A/P OFF)", sub: "수동 착륙 준비", keyword: ["오토파일럿", "해제", "완료", "껐습니다"] },
+    { text: "시트벨트 사인을 ON으로 켜세요", sub: "객실 승무원에게 알림", keyword: ["시트벨트", "사인", "완료", "켰습니다"] },
+  ],
+  "비상 절차": [
+    { text: "비상 주파수로 전환하세요 (121.5 MHz)", sub: "🚨 즉시 실행", keyword: ["비상", "주파수", "전환", "완료"] },
+    { text: "스쿼크 코드를 7700으로 설정하세요", sub: "트랜스폰더 비상 코드", keyword: ["스쿼크", "칠천칠백", "완료", "설정"] },
+    { text: "산소 마스크를 착용하세요", sub: "기압 이상 시 즉시 착용", keyword: ["산소", "마스크", "착용", "완료"] },
+    { text: "엔진 화재 절차를 시작하세요", sub: "소화기 레버 확인", keyword: ["엔진", "화재", "완료", "시작"] },
+    { text: "최근접 공항으로 비상 착륙 준비", sub: "ATC와 교신 유지", keyword: ["비상", "착륙", "공항", "완료", "준비"] },
+  ],
+};
+
+let phases = Object.keys(PHASES);
+let curPhase = 0, curStep = 0, steps = [];
+let recognition = null, isListening = false;
+
+// INIT
+function init() {
+  const bar = document.getElementById('phaseTabs');
+  phases.forEach((p, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'ptab' + (i===0?' active':'');
+    btn.textContent = p;
+    btn.onclick = () => selectPhase(i);
+    bar.appendChild(btn);
+  });
+  loadPhase(0);
+  setInterval(() => {
+    const n = new Date();
+    document.getElementById('clock').textContent =
+      [n.getHours(),n.getMinutes(),n.getSeconds()].map(x=>x.toString().padStart(2,'0')).join(':');
+  }, 1000);
+  initVoice();
+}
+
+function selectPhase(i) {
+  curPhase = i; curStep = 0;
+  document.querySelectorAll('.ptab').forEach((b,j) => b.classList.toggle('active', j===i));
+  document.getElementById('phaseLabel').textContent = phases[i];
+  loadPhase(i);
+  hideAI();
+}
+
+function loadPhase(i) {
+  steps = PHASES[phases[i]].map(s => ({...s, done:false, skipped:false}));
+  render();
+}
+
+function render() {
+  const total = steps.length;
+  const done = steps.filter(s=>s.done||s.skipped).length;
+  const pct = Math.round(done/total*100);
+  document.getElementById('progFill').style.width = pct+'%';
+  document.getElementById('progPct').textContent = pct+'%';
+
+  const ml = document.getElementById('miniSteps');
+  ml.innerHTML = '';
+  steps.forEach((s,i) => {
+    const el = document.createElement('div');
+    el.className = 'ms '+(s.done||s.skipped?'done':i===curStep?'cur':'pend');
+    el.textContent = (i+1).toString().padStart(2,'0');
+    ml.appendChild(el);
+  });
+
+  const s = steps[curStep];
+  if(s) {
+    document.getElementById('instrText').textContent = s.text;
+    document.getElementById('instrSub').textContent = s.sub||'';
+    document.getElementById('stepTag').textContent = 'STEP '+(curStep+1).toString().padStart(2,'0');
+  }
+}
+
+function completeStep() {
+  steps[curStep].done = true;
+  doFlash();
+  showAI('✅ 확인되었습니다. 다음 단계로 넘어갑니다.');
+  setTimeout(() => { hideAI(); advance(); }, 1800);
+}
+
+function skipStep() {
+  steps[curStep].skipped = true;
+  advance();
+}
+
+function advance() {
+  const next = steps.findIndex((s,i) => i>curStep && !s.done && !s.skipped);
+  if(next===-1) {
+    if(steps.every(s=>s.done||s.skipped)) showComplete();
+    return;
+  }
+  curStep = next;
+  render();
+  // 음성으로 다음 지시 읽어주기
+  speak(steps[curStep].text);
+}
+
+function showComplete() {
+  const skipped = steps.filter(s=>s.skipped).length;
+  document.getElementById('completeSub').textContent =
+    phases[curPhase]+' 완료\n'+
+    (steps.length-skipped)+'/'+steps.length+' 항목 완료';
+  document.getElementById('completeScreen').classList.add('show');
+  speak('체크리스트가 완료되었습니다.');
+}
+
+function restart() {
+  document.getElementById('completeScreen').classList.remove('show');
+  selectPhase(curPhase);
+}
+
+// AI RESPONSE
+function showAI(msg) {
+  document.getElementById('aiText').textContent = msg;
+  document.getElementById('aiResponse').classList.add('show');
+}
+function hideAI() {
+  document.getElementById('aiResponse').classList.remove('show');
+}
+
+// FLASH
+function doFlash() {
+  const el = document.getElementById('flash');
+  el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'), 150);
+}
+
+// TTS - 음성 읽기
+function speak(text) {
+  if(!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'ko-KR';
+  u.rate = 0.9;
+  u.pitch = 1;
+  window.speechSynthesis.speak(u);
+}
+
+// VOICE RECOGNITION
+function initVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR) {
+    document.getElementById('btnVoice').style.opacity = '0.3';
+    document.getElementById('btnVoice').title = '이 브라우저는 음성인식을 지원하지 않습니다';
+    return;
+  }
+  recognition = new SR();
+  recognition.lang = 'ko-KR';
+  recognition.continuous = false;
+  recognition.interimResults = false;
+
+  recognition.onresult = (e) => {
+    const transcript = e.results[0][0].transcript;
+    processVoice(transcript);
+  };
+  recognition.onend = () => {
+    setListening(false);
+  };
+  recognition.onerror = () => {
+    setListening(false);
+  };
+}
+
+function toggleVoice() {
+  if(!recognition) {
+    showAI('⚠ 이 브라우저는 음성인식을 지원하지 않습니다. 크롬을 사용해주세요.');
+    return;
+  }
+  if(isListening) {
+    recognition.stop();
+    setListening(false);
+  } else {
+    recognition.start();
+    setListening(true);
+    speak('말씀하세요');
+  }
+}
+
+function setListening(val) {
+  isListening = val;
+  const btn = document.getElementById('btnVoice');
+  const vs = document.getElementById('voiceStatus');
+  const ring = document.getElementById('gRing');
+  btn.classList.toggle('active', val);
+  vs.classList.toggle('show', val);
+  ring.classList.toggle('listening', val);
+}
+
+function processVoice(transcript) {
+  const step = steps[curStep];
+  if(!step) return;
+
+  showAI('🎤 "' + transcript + '"');
+
+  // 완료 키워드 체크
+  const keywords = step.keyword || [];
+  const matched = keywords.some(k => transcript.includes(k));
+
+  if(matched) {
+    setTimeout(() => {
+      showAI('✅ "' + transcript + '" — 확인되었습니다!');
+      doFlash();
+      setTimeout(() => {
+        hideAI();
+        steps[curStep].done = true;
+        advance();
+      }, 1500);
+    }, 500);
+  } else if(transcript.includes('다음') || transcript.includes('넘어가')) {
+    setTimeout(() => {
+      showAI('➡ 다음 단계로 넘어갑니다.');
+      setTimeout(() => { hideAI(); skipStep(); }, 1500);
+    }, 300);
+  } else if(transcript.includes('반복') || transcript.includes('다시')) {
+    speak(step.text);
+    showAI('🔁 다시 읽어드립니다: ' + step.text);
+  } else if(transcript.includes('뭐야') || transcript.includes('뭔가요') || transcript.includes('알려줘')) {
+    speak(step.text);
+    showAI('📋 현재 지시: ' + step.text);
+  } else {
+    showAI('❓ "' + transcript + '" — 다시 말씀해주세요.\n완료되면 "확인" 또는 "완료"라고 말하세요.');
+    setTimeout(hideAI, 3000);
+  }
+}
+
+// CAMERA
+navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+  .then(s => document.getElementById('webcam').srcObject = s)
+  .catch(() => navigator.mediaDevices.getUserMedia({ video: true })
+    .then(s => document.getElementById('webcam').srcObject = s)
+    .catch(() => {}));
+
+init();
+
+// 소리 잠금 해제 - 첫 터치 시 소리 활성화
+let audioUnlocked = false;
+function unlockAudio() {
+  if(audioUnlocked) return;
+  audioUnlocked = true;
+  // 빈 utterance로 오디오 컨텍스트 열기
+  const u = new SpeechSynthesisUtterance('');
+  window.speechSynthesis.speak(u);
+  setTimeout(() => {
+    speak('CockpitOS 시작합니다. 이륙 전 점검을 시작하세요.');
+  }, 300);
+  document.removeEventListener('touchstart', unlockAudio);
+  document.removeEventListener('click', unlockAudio);
+}
+document.addEventListener('touchstart', unlockAudio);
+document.addEventListener('click', unlockAudio);
+</script>
+</body>
+</html>
